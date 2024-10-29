@@ -1,0 +1,32 @@
+version: '3'
+
+services:
+  nodejs:
+    build:
+      context: .
+      dockerfile: Dockerfile_without_multi_stage
+    image: sample_app:v1
+    restart: unless-stopped
+    #env_file: .env
+    environment:
+      - NODE_ENV=test
+    ports:
+      - "8080:8080"
+    networks:
+      - external_network
+
+
+  proxy:
+      build:
+        context: .
+        dockerfile: Dockerfile.nginx
+      image: nginx_proxy:v1
+      ports:
+        - 80:80
+      depends_on:
+        - nodejs
+      networks:
+        - external_network
+networks:
+  external_network:
+    external: true

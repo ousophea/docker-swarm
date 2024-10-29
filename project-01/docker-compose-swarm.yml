@@ -1,0 +1,44 @@
+##  docker network create -d overlay --attachable external_network
+
+version: '3'
+
+services:
+  nodejs:
+    build:
+      context: .
+      dockerfile: Dockerfile_without_multi_stage
+    image: sample_app:v2
+    restart: unless-stopped
+    #env_file: .env
+    environment:
+      - NODE_ENV=test
+    ports:
+      - "8080:8080"
+    deploy:
+     replicas: 4
+     restart_policy:
+       max_attempts: 3
+       condition: on-failure       
+     update_config:
+       parallelism: 3
+       delay: 10s
+    networks:
+      - external_network
+
+  proxy:
+      build:
+        context: .
+        dockerfile: Dockerfile.nginx
+      image: nginx_proxy:v1
+      ports:
+        - 81:80
+      depends_on:
+        - nodejs
+      deploy:
+        placement:
+          constraints: [node.role == manager]
+      networks:
+        - external_network
+networks:
+  external_network:
+    external: true
