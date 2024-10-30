@@ -1,59 +1,110 @@
-**Docker Swarm Setup**
+**Understanding the Docker Swarm Code**
 
-This configuration file defines a Docker Swarm service for a Node.js application and an Nginx proxy.
+This Docker Compose file defines a multi-service application deployed on a Docker Swarm cluster. Let's break down the components:
 
-**Prerequisites:**
+**Network Creation**
 
-* A Docker Swarm cluster set up.
-* Docker Compose installed on your machine.
+```dockerfile
+docker network create -d overlay --attachable external_network
+```
 
-**Configuration Breakdown:**
+- **`docker network create`**: This command creates a new network.
+- **`-d overlay`**: Specifies the driver for the network, in this case, the overlay driver, which is ideal for multi-host networks.
+- **`--attachable`**: Makes the network attachable, allowing services to join and leave the network dynamically.
+- **`external_network`**: Assigns a name to the network.
 
-**Services:**
+**Services**
 
-1. **nodejs:**
-   - Builds the Node.js image from the `Dockerfile_without_multi_stage` file.
-   - Exposes port 8080.
-   - Sets the `NODE_ENV` environment variable to `test`.
-   - Deploys 4 replicas with a maximum of 3 restart attempts on failure.
-   - Connects to the `external_network`.
+**Node.js Service**
 
-2. **proxy:**
-   - Builds the Nginx proxy image from the `Dockerfile.nginx` file.
-   - Exposes port 81.
-   - Depends on the `nodejs` service.
-   - Deploys the service on manager nodes.
-   - Connects to the `external_network`.
+```dockerfile
+# ...
+build:
+  context: .
+  dockerfile: Dockerfile
+image: sample_app:v2
+restart: unless-stopped
+environment:
+  NODE_ENV: test
+ports:
+  - "8080:8080"
+deploy:
+  replicas: 4
+  restart_policy:
+    condition: on-failure
+    delay: 10s
+    max_attempts: 3
+  update_config:
+    parallelism: 2
+    delay: 10s
+networks:
+  external_network:
+    aliases:
+      - nodejs
+```
 
-**Networks:**
+- **Build**: Builds the image from the specified Dockerfile.
+- **Image**: The built image is tagged as `sample_app:v2`.
+- **Restart Policy**: Restart the container unless explicitly stopped.
+- **Environment**: Sets the `NODE_ENV` environment variable to `test`.
+- **Ports**: Maps port 8080 of the container to port 8080 of the host.
+- **Deploy**:
+  - **Replicas**: Deploys 4 replicas of the service.
+  - **Restart Policy**: Restarts failed containers up to 3 times.
+  - **Update Config**: Controls the update strategy for replicas.
+- **Networks**: Attaches the service to the `external_network`.
 
-- **external_network:**
-  - An external network that both services will connect to. This allows them to communicate with each other and other services on the network.
+**Proxy Service**
 
-**Deployment:**
+```dockerfile
+# ...
+build:
+  context: .
+  dockerfile: Dockerfile
+image: nginx_proxy:v1
+ports:
+  - "81:80"
+depends_on:
+  - nodejs
+deploy:
+  placement:
+    constraints:
+      - node.role == manager
+networks:
+  external_network:
+```
 
-1. **Create the Docker Compose file:**
-   - Save the provided configuration as a `docker-compose.yml` file in your project directory.
+- **Build**: Builds the image from the specified Dockerfile.
+- **Image**: The built image is tagged as `nginx_proxy:v1`.
+- **Ports**: Maps port 81 of the host to port 80 of the container.
+- **Depends On**: Ensures the nodejs service starts before the proxy service.
+- **Deploy**:
+  - **Placement**: Restricts the service to manager nodes.
+- **Networks**: Attaches the service to the `external_network`.
 
-2. **Start the Services:**
-   - Run the following command in your terminal:
-     ```bash
-     docker-compose up -d
-     ```
-   - This will start the Node.js and Nginx services on your Docker Swarm cluster.
+**Networks**
 
-**Additional Notes:**
+```dockerfile
+networks:
+  external_network:
+    external: true
+```
 
-- **Environment Variables:**
-  - You can use environment variables to customize the behavior of your services. For example, you can set the `NODE_ENV` variable to `production` to enable production mode.
-- **Scaling:**
-  - You can scale the number of replicas for each service using the `docker-compose scale` command. For example, to scale the `nodejs` service to 8 replicas, you would run:
-     ```bash
-     docker-compose scale nodejs=8
-     ```
-- **Network Configuration:**
-  - The `external_network` is defined as an external network, meaning it's managed outside of this Docker Compose file. You'll need to ensure that this network exists on your Docker Swarm cluster.
-- **Security:**
-  - Consider additional security measures such as network segmentation, access control, and encryption to protect your services.
+- **External Network**: Declares the `external_network` as an external network, meaning it's already defined outside of this Compose file, possibly on the Swarm cluster itself.
 
-By following these steps and understanding the configuration, you can effectively deploy and manage your Node.js application and Nginx proxy on your Docker Swarm cluster.
+**How it Works**
+
+1. **Network Creation**: The `external_network` is created using the overlay driver, allowing communication between services across different nodes in the Swarm cluster.
+2. **Service Deployment**:
+   - The `nodejs` service is deployed with 4 replicas, each running on a different node (if available).
+   - The `proxy` service is deployed on a manager node, acting as a reverse proxy for the `nodejs` service.
+3. **Service Communication**: Both services are connected to the `external_network`, enabling them to communicate with each other.
+4. **Load Balancing**: Docker Swarm's built-in load balancing distributes traffic across the `nodejs` replicas.
+5. **Service Discovery**: Services can discover each other within the network, simplifying service-to-service communication.
+
+**Key Points**
+
+- **Overlay Network**: Ideal for multi-host networks, providing efficient communication between services.
+- **Service Deployment**: Docker Swarm handles the deployment and scaling of services across the cluster.
+- **Load Balancing**: Built-in load balancing ensures efficient traffic distribution.
+- **Service Discovery**: Services can easily find and communicate with each other.
